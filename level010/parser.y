@@ -12,7 +12,7 @@ SymbolTable SymTab;
 static llvm::Function* MainFn = nullptr;
 static llvm::Function* PrintfFn = nullptr;
 static llvm::Function* CurrentFn = nullptr;
-static llvm::BasicBlock* FuncEndBB = nullptr;
+
 
 int yylex(void);
 void yyerror(const char* s) { fprintf(stderr, "Parser error: %s\n", s); }

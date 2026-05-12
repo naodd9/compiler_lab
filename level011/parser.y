@@ -14,6 +14,7 @@ static llvm::Function* MainFn = nullptr;
 static llvm::Function* PrintfFn = nullptr;
 static llvm::Function* CurrentFn = nullptr;
 static std::vector<std::string> paramNames;
+static std::vector<llvm::Value*> argValues;
 
 int yylex(void);
 void yyerror(const char* s) { fprintf(stderr, "Parser error: %s\n", s); }
@@ -58,15 +59,16 @@ stmt
         Builder->CreateStore($3, alloca);
         free($1);
       }
-    | DEF IDENT '(' param_list ')' '{' stmts '}' {
+    | DEF IDENT '(' param_list ')' {
+        std::vector<llvm::Type*> paramTypes(paramNames.size(), llvm::Type::getInt32Ty(*TheContext));
         llvm::FunctionType* fty = llvm::FunctionType::get(
-            llvm::Type::getInt32Ty(*TheContext), false);
+            llvm::Type::getInt32Ty(*TheContext), paramTypes, false);
         llvm::Function* fn = llvm::Function::Create(fty, llvm::Function::ExternalLinkage, $2, *TheModule);
         llvm::BasicBlock* entry = llvm::BasicBlock::Create(*TheContext, "entry", fn);
         Builder->SetInsertPoint(entry);
         CurrentFn = fn;
         SymTab.pushScope(fn);
-        
+
         int i = 0;
         for (auto& arg : fn->args()) {
             if (i < (int)paramNames.size()) {
@@ -76,17 +78,16 @@ stmt
             i++;
         }
         paramNames.clear();
-        
-        Builder->CreateRet(llvm::ConstantInt::get(*TheContext, llvm::APInt(32, 0, true)));
-      }
+      } '{' stmts '}'
     | IDENT '(' arg_list ')' ';' {
         llvm::Function* fn = TheModule->getFunction($1);
         if (fn) {
-            Builder->CreateCall(fn, {});
+            Builder->CreateCall(fn, argValues);
         } else {
             fprintf(stderr, "Error: function '%s' not defined.\n", $1);
         }
         free($1);
+        argValues.clear();
       }
     | IF '(' boolexpr ')' '{' stmts '}' {
         llvm::BasicBlock* thenBB = llvm::BasicBlock::Create(*TheContext, "then", MainFn);
@@ -136,8 +137,8 @@ param_list
 
 arg_list
     : /* empty */
-    | expr                  { /* ignored for now */ }
-    | arg_list ',' expr     { /* ignored for now */ }
+    | expr                  { argValues.push_back($1); }
+    | arg_list ',' expr     { argValues.push_back($3); }
     ;
 
 stmts
@@ -158,7 +159,8 @@ boolexpr
 expr
     : INTEGER              { $$ = llvm::ConstantInt::get(*TheContext, llvm::APInt(32, $1, true)); }
     | IDENT                {
-        llvm::AllocaInst* alloca = SymTab.lookup($1);
+        llvm::Function* fn = CurrentFn ? CurrentFn : MainFn;
+        llvm::AllocaInst* alloca = SymTab.lookup($1, fn);
         if (!alloca) {
             fprintf(stderr, "Error: variable '%s' used before assignment.\n", $1);
             $$ = llvm::ConstantInt::get(*TheContext, llvm::APInt(32, 0, true));

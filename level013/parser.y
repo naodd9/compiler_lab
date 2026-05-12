@@ -70,7 +70,7 @@ stmt
                 $3
             };
             llvm::Value* gep = Builder->CreateGEP(
-                llvm::Type::getInt32Ty(*TheContext), info->base, idx, "arrayidx");
+                info->arrTy, info->base, idx, "arrayidx");
             Builder->CreateStore($6, gep);
         } else {
             fprintf(stderr, "Error: array '%s' not declared.\n", $1);
@@ -88,7 +88,7 @@ stmt
                 totalIdx
             };
             llvm::Value* gep = Builder->CreateGEP(
-                llvm::Type::getInt32Ty(*TheContext), info->base, idx, "arrayidx");
+                info->arrTy, info->base, idx, "arrayidx");
             Builder->CreateStore($9, gep);
         } else {
             fprintf(stderr, "Error: 2D array '%s' not declared.\n", $1);
@@ -119,7 +119,7 @@ expr
                 $3
             };
             llvm::Value* gep = Builder->CreateGEP(
-                llvm::Type::getInt32Ty(*TheContext), info->base, idx, "arrayidx");
+                info->arrTy, info->base, idx, "arrayidx");
             $$ = Builder->CreateLoad(llvm::Type::getInt32Ty(*TheContext), gep, "arrayval");
         } else {
             fprintf(stderr, "Error: array '%s' not declared.\n", $1);
@@ -138,7 +138,7 @@ expr
                 totalIdx
             };
             llvm::Value* gep = Builder->CreateGEP(
-                llvm::Type::getInt32Ty(*TheContext), info->base, idx, "arrayidx");
+                info->arrTy, info->base, idx, "arrayidx");
             $$ = Builder->CreateLoad(llvm::Type::getInt32Ty(*TheContext), gep, "arrayval");
         } else {
             fprintf(stderr, "Error: 2D array '%s' not declared.\n", $1);

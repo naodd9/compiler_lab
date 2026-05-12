@@ -16,6 +16,7 @@ extern std::unique_ptr<llvm::IRBuilder<>> Builder;
 
 struct ArrayInfo {
     llvm::AllocaInst* base;
+    llvm::ArrayType*  arrTy;
     int size;
 };
 
@@ -47,7 +48,7 @@ public:
         llvm::ArrayType* arrTy = llvm::ArrayType::get(
             llvm::Type::getInt32Ty(*TheContext), size);
         llvm::AllocaInst* alloca = entryBuilder.CreateAlloca(arrTy, nullptr, name);
-        arrays_[name] = {alloca, size};
+        arrays_[name] = {alloca, arrTy, size};
         return alloca;
     }
 

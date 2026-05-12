@@ -16,6 +16,7 @@ extern std::unique_ptr<llvm::IRBuilder<>> Builder;
 
 struct ArrayInfo {
     llvm::AllocaInst* base;
+    llvm::ArrayType*  arrTy;
     int rows;
     int cols;
 };
@@ -43,12 +44,12 @@ public:
         return (it != vars_.end()) ? it->second : nullptr;
     }
 
-    llvm::AllocaInst* declareArray(const std::string& name, int rows, int cols, llvm::Function* fn) {
+        llvm::AllocaInst* declareArray(const std::string& name, int rows, int cols, llvm::Function* fn) {
         llvm::IRBuilder<> entryBuilder(&fn->getEntryBlock(), fn->getEntryBlock().begin());
         llvm::ArrayType* arrTy = llvm::ArrayType::get(
             llvm::Type::getInt32Ty(*TheContext), rows * cols);
         llvm::AllocaInst* alloca = entryBuilder.CreateAlloca(arrTy, nullptr, name);
-        arrays_[name] = {alloca, rows, cols};
+        arrays_[name] = {alloca, arrTy, rows, cols};
         return alloca;
     }
 

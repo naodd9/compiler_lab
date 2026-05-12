@@ -12,18 +12,20 @@ extern std::unique_ptr<llvm::IRBuilder<>> Builder;
 class SymbolTable {
 public:
     llvm::AllocaInst* declare(const std::string& name, llvm::Function* fn) {
-        auto it = vars_.find(name);
+        std::string key = name + "@" + std::to_string((uintptr_t)fn);
+        auto it = vars_.find(key);
         if (it != vars_.end()) return it->second;
 
         llvm::IRBuilder<> entryBuilder(&fn->getEntryBlock(), fn->getEntryBlock().begin());
         llvm::AllocaInst* alloca = entryBuilder.CreateAlloca(
             llvm::Type::getInt32Ty(*TheContext), nullptr, name);
-        vars_[name] = alloca;
+        vars_[key] = alloca;
         return alloca;
     }
 
-    llvm::AllocaInst* lookup(const std::string& name) const {
-        auto it = vars_.find(name);
+    llvm::AllocaInst* lookup(const std::string& name, llvm::Function* fn) const {
+        std::string key = name + "@" + std::to_string((uintptr_t)fn);
+        auto it = vars_.find(key);
         return (it != vars_.end()) ? it->second : nullptr;
     }
 

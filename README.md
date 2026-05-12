@@ -72,7 +72,28 @@ g++ --version
 
 ---
 
+<<<<<<< HEAD
 
+=======
+## Usage
+
+### Build a Level
+```bash
+cd levelXXX
+make
+```
+
+### Run a Level
+```bash
+./calc
+# Type code, press Ctrl+D to execute
+```
+
+### Clean
+```bash
+make clean
+```
+>>>>>>> e7e8689 (bug fixed all done)
 ## Keyboard Shortcuts
 
 | Action | Linux | Windows | Mac |

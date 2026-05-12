@@ -26,19 +26,12 @@ int nums[5];
 nums[0] = 10;
 nums[1] = 20;
 nums[0] + nums[1];
-
-i = 0;
-while (i < 5) {
-    nums[i];
-    i = i + 1;
-}
 ```
 
 ## Features
 - Array declaration: `int name[size];`
 - Array element assignment: `arr[index] = value;`
 - Array element access: `arr[index]`
-- All Level 011 features
 
 ## Clean
 ```bash
