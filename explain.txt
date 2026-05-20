@@ -1,0 +1,266 @@
+Compiler Lab – Comprehensive Documentation (explain.txt)
+
+This document explains the entire codebase level by level. It covers:
+- High-level purpose and functionality at that stage
+- Detailed code logic and implementation
+- Key code lines and why they matter
+
+The project builds a compiler for a simple C-like language using Flex (lexer), Bison (parser), and LLVM (code generation). Each level adds one new feature while reusing previous work.
+
+================================================================================
+LEVEL 001 – Grammar Validation Only
+================================================================================
+Detailed code logic:
+- lexer.l defines tokens: numbers, +, -, *, /, parentheses.
+- parser.y contains only grammar rules with no semantic actions that do work.
+- No AST, no symbol table, no LLVM.
+- Main just calls yyparse() and prints success/failure.
+
+Important code:
+```c
+// parser.y (simplified)
+input : /* empty */ | input line ;
+line  : expr NEWLINE { /* no action */ } ;
+expr  : INTEGER | expr '+' expr | ... ;
+```
+These rules only validate structure. No computation happens.
+
+================================================================================
+LEVEL 002 – Direct Computation During Parsing
+================================================================================
+Detailed code logic:
+- Same lexer as level 001.
+- In parser.y, every expr rule computes the answer immediately:
+  - INTEGER returns its number.
+  - expr + expr returns left + right.
+- No memory allocation, no LLVM, no variables.
+
+Important code:
+```c
+// parser.y:35
+expr
+    : INTEGER               { $$ = $1; }
+    | expr '+' expr         { $$ = $1 + $3; }
+    | expr '-' expr         { $$ = $1 - $3; }
+    ...
+```
+The $$ and $1, $3 are Bison’s way of passing values up the parse tree.
+
+================================================================================
+LEVEL 003 – Abstract Syntax Tree (AST)
+================================================================================
+Detailed code logic:
+- ast.h defines a simple tree node:
+  - kind (Add, Sub, Integer, etc.)
+  - value (for numbers)
+  - left and right child pointers
+- ast.cpp implements makeInteger, makeBinaryOp, evalAST, printAST, freeAST.
+- parser.y now creates nodes instead of computing:
+  - expr + expr calls makeBinaryOp(NK_Add, $1, $3)
+- After parsing, main calls evalAST(root) and printAST(root).
+
+Important code (ast.h:21-26):
+```c
+struct ASTNode {
+    NodeKind kind;
+    int      value;
+    ASTNode* left;
+    ASTNode* right;
+};
+```
+This structure lets the compiler represent any expression as a tree.
+
+================================================================================
+LEVEL 004 – LLVM IR Generation + JIT
+================================================================================
+Detailed code logic:
+- llvm_includes.h pulls in all needed LLVM headers.
+- parser.y and codegen.h set up three global LLVM objects:
+  - TheContext (owns types and values)
+  - TheModule (the whole program)
+  - Builder (creates instructions)
+- Every expression rule now calls Builder->CreateAdd, CreateSub, etc.
+- main() creates a “main” function, sets the insert point, parses, adds a return, verifies the module, and dumps IR.
+
+Important code (parser.y:46-49):
+```c
+$$ = Builder->CreateAdd($1, $3, "addtmp");
+$$ = Builder->CreateSub($1, $3, "subtmp");
+$$ = Builder->CreateMul($1, $3, "multmp");
+$$ = Builder->CreateSDiv($1, $3, "divtmp");
+```
+These lines emit the actual LLVM instructions.
+
+Setup in main (parser.y:61-72):
+```c
+TheContext = std::make_unique<llvm::LLVMContext>();
+TheModule  = std::make_unique<llvm::Module>("calc_module", *TheContext);
+Builder    = std::make_unique<llvm::IRBuilder<>>(*TheContext);
+```
+These three lines are repeated (with small changes) in every later level.
+
+================================================================================
+LEVEL 006 – x86-64 Assembly Output
+================================================================================
+Detailed code logic:
+- Same IR generation as level 004.
+- Makefile adds a new target that runs llc-17 on output.ll.
+- No new C++ code; the change is only in the build process.
+- Demonstrates the full pipeline: source → IR → assembly → executable.
+
+Important code (Makefile target):
+```
+llc-17 output.ll -o output.s
+gcc -no-pie output.s -o program
+```
+This shows how LLVM can target real hardware.
+
+================================================================================
+LEVEL 007 – Variables and Assignment
+================================================================================
+Detailed code logic:
+- Introduces symtab.h with a simple SymbolTable class.
+- declareVar(name) creates an AllocaInst (stack slot) inside the current function.
+- lookupVar(name) returns the AllocaInst so later code can store or load from it.
+- parser.y rules for “IDENT = expr ;” call declareVar then CreateStore.
+- Expression rules for IDENT call lookupVar then CreateLoad.
+
+Important code (symtab.h:31-39):
+```c
+llvm::AllocaInst* declareVar(const std::string& name, llvm::Function* fn) {
+    llvm::IRBuilder<> entryBuilder(&fn->getEntryBlock(), ...);
+    llvm::AllocaInst* alloca = entryBuilder.CreateAlloca(
+        llvm::Type::getInt32Ty(*TheContext), nullptr, name);
+    vars_[name] = alloca;
+    return alloca;
+}
+```
+Allocas are placed at the start of the function so they dominate all uses.
+
+================================================================================
+LEVEL 008 – Control Flow (if / else / while)
+================================================================================
+Detailed code logic:
+- New tokens: IF, ELSE, WHILE, comparison operators.
+- boolexpr nonterminal builds comparison instructions (CreateICmpSGT, etc.).
+- For each if/while the parser creates several BasicBlocks:
+  - Then block, Else block, Merge block, Loop header, Loop body, Loop exit.
+- Builder->CreateCondBr decides which block runs next.
+- Every block must end with a terminator (ret or br) or LLVM verification fails.
+
+Important code (parser.y boolexpr):
+```c
+$$ = Builder->CreateICmpSGT($1, $3, "cmptmp");  // greater than
+$$ = Builder->CreateICmpEQ($1, $3, "cmptmp");   // equal
+```
+These produce i1 (boolean) values used by conditional branches.
+
+================================================================================
+LEVEL 009 – Short-Circuit Boolean Operators (and / or)
+================================================================================
+Detailed code logic:
+- New tokens AND, OR with lowest precedence.
+- Instead of a single instruction, the parser builds extra basic blocks.
+- For “a and b”:
+  - Evaluate a
+  - If false, jump straight to false result (skip b)
+  - If true, evaluate b and use its result
+- Same pattern for “or” but with opposite logic.
+- Uses CreateCondBr and phi-like merging of results.
+
+Important code pattern:
+The parser creates 3–4 new BasicBlocks per boolean expression and wires them with conditional branches so the second operand is skipped when possible.
+
+================================================================================
+LEVEL 010 – Functions (No Arguments)
+================================================================================
+Detailed code logic:
+- New keyword “def”.
+- When a function definition is parsed, a new llvm::Function is created.
+- A fresh SymbolTable scope or clearVars() is used inside the function.
+- Return statements emit CreateRet.
+- Calls are emitted with Builder->CreateCall.
+- The main function still exists; user functions are additional.
+
+Important code (parser.y function rule):
+```c
+llvm::Function* fn = llvm::Function::Create(...);
+llvm::BasicBlock* entry = llvm::BasicBlock::Create(..., "entry", fn);
+Builder->SetInsertPoint(entry);
+```
+This starts a new function context.
+
+================================================================================
+LEVEL 011 – Functions with Arguments
+================================================================================
+Detailed code logic:
+- Function header now includes a parameter list.
+- For each parameter the parser creates an AllocaInst in the entry block.
+- The incoming function argument is stored into that alloca.
+- Inside the function body, parameters are looked up exactly like normal variables.
+- SymbolTable now stores both user variables and parameter allocas.
+
+Important code (symtab.h:35-39):
+```c
+llvm::IRBuilder<> entryBuilder(&fn->getEntryBlock(), fn->getEntryBlock().begin());
+llvm::AllocaInst* alloca = entryBuilder.CreateAlloca(...);
+```
+Placing parameter allocas at the very beginning guarantees they are available everywhere in the function.
+
+================================================================================
+LEVEL 012 – One-Dimensional Arrays
+================================================================================
+Detailed code logic:
+- New syntax: type ident [ size ] ;
+- declareArray stores base pointer, ArrayType, and size in the symbol table.
+- For read: compute index, CreateGEP, then CreateLoad.
+- For write: compute index, CreateGEP, then CreateStore.
+- 1-D arrays are simple: index is just the offset.
+
+Important code (parser.y array access):
+```c
+llvm::Value* idx[2] = { ConstantInt(0), indexValue };
+llvm::Value* gep = Builder->CreateGEP(arrTy, base, idx);
+$$ = Builder->CreateLoad(..., gep);
+```
+The first index (0) is required by LLVM’s GEP for array types.
+
+================================================================================
+LEVEL 013 – Two-Dimensional Arrays (Most Complete)
+================================================================================
+Detailed code logic:
+- Array declaration now accepts two sizes: int matrix[rows][cols];
+- ArrayInfo struct stores {base, arrTy, rows, cols}.
+- Access uses the formula: totalIdx = row * cols + col
+- GEP is still performed on the flattened ArrayType.
+- 1-D arrays are represented as arrays with cols = 1.
+- SymbolTable now manages three maps: vars, arrays, funcs.
+
+Important code (symtab.h:47-54):
+```c
+llvm::ArrayType* arrTy = llvm::ArrayType::get(
+    llvm::Type::getInt32Ty(*TheContext), rows * cols);
+llvm::AllocaInst* alloca = ...CreateAlloca(arrTy...);
+arrays_[name] = {alloca, arrTy, rows, cols};
+```
+Flattens the 2-D array into a single contiguous block.
+
+Index calculation (parser.y:83-91):
+```c
+llvm::Value* totalIdx = Builder->CreateAdd(
+    Builder->CreateMul($3, ConstantInt(cols)), $6);
+llvm::Value* idx[2] = { ConstantInt(0), totalIdx };
+llvm::Value* gep = Builder->CreateGEP(arrTy, base, idx);
+```
+This is the core of 2-D array support.
+
+================================================================================
+OVERALL CODEBASE ARCHITECTURE (All Levels)
+================================================================================
+- Lexer (lexer.l): Always produces tokens (INTEGER, IDENT, keywords, operators).
+- Parser (parser.y): Grammar + semantic actions that emit LLVM IR.
+- Symbol Table (symtab.h in later levels): Maps names to AllocaInst* or ArrayInfo or FunctionInfo.
+- LLVM Globals: TheContext, TheModule, Builder – created once in main().
+- Progression: Each level adds one language feature while keeping the same overall structure.
+
+This document gives you everything needed to explain the project in an academic presentation: purpose, code logic, and key implementation lines for every level.
